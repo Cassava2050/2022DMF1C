@@ -1,0 +1,8 @@
+"0","## Packages (install)"
+"0","pkgs <- rownames(installed.packages())"
+"0","if(!""tidyverse"" %in% pkgs) install.packages(""tidyverse"")"
+"0","if(!""here"" %in% pkgs) install.packages(""here"")"
+"0","if(!""statgenSTA"" %in% pkgs) install.packages(""statgenSTA"")"
+"0","if(!""statgenGxE"" %in% pkgs) install.packages(""statgenGxE"")"
+"0","if(!""openxlsx"" %in% pkgs) install.packages(""openxlsx"")"
+"0","if(!""asreml"" %in% pkgs) install.packages(""asreml"")"

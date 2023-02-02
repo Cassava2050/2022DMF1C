@@ -1,0 +1,16 @@
+{
+  "hash": "4b8e5ad12107a26b8dee7d342d7e2c37",
+  "result": {
+    "markdown": "---\ntitle: \"2022DMF1C Asia\"\nauthor: \"Luis Fernando Delgado\"\ndate: \"02/02/2023\"\n---\n\n\n# Introduction\n\nThis is a script about predictions in non-replicated trials with augmented checks. According to Salvador Gezan, the best way to make good predictions is to do a spatial analysis. See [Part 1](https://vsni.co.uk/blogs/unreplicated-trials-part-1) and [Part 2](https://vsni.co.uk/blogs/unreplicated-trials-part-2).\n\n\n::: {.cell}\n\n```{.r .cell-code}\n1 + 1\n```\n\n::: {.cell-output .cell-output-stdout}\n```\n[1] 2\n```\n:::\n:::\n",
+    "supporting": [
+      "2022DMF1C_files"
+    ],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

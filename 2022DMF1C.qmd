@@ -1,0 +1,13 @@
+---
+title: "2022DMF1C Asia"
+author: "Luis Fernando Delgado"
+date: "02/02/2023"
+---
+
+# Introduction
+
+This is a script about predictions in non-replicated trials with augmented checks. According to Salvador Gezan, the best way to make good predictions is to do a spatial analysis. See [Part 1](https://vsni.co.uk/blogs/unreplicated-trials-part-1) and [Part 2](https://vsni.co.uk/blogs/unreplicated-trials-part-2).
+
+```{r}
+1 + 1
+```

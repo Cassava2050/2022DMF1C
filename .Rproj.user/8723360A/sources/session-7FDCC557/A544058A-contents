@@ -1,0 +1,469 @@
+rm(list = ls())
+library(tidyverse)
+library(readxl)
+source("https://raw.githubusercontent.com/Cassava2050/PPD/main/utilities_tidy.R")
+source("https://raw.githubusercontent.com/darizasu/work/master/scripts/ggCor.R")
+
+# all the data in CassavaBase -- download on 2023_Feb_02 -------------------
+
+base_data_raw <-
+  readRDS(file = here::here("data", "01_historical_raw_data_2023-02-01.rds"))
+
+# the downloading process did not take the observationName = tissue sample (slices)
+
+# standardize colnames ----------------------------------------------------
+
+
+base_data_raw <- 
+  change_colname(base_data_raw)
+
+obs_col = c(names(base_data_raw) [str_detect(names(base_data_raw), "obs_")],
+            "use_rep_number", "blockNumber"   ,                      
+            "use_plot_number" , "use_row_number",                      
+            "use_col_number" , "use_plot_width"  ,                    
+            "use_plot_length") 
+
+base_data_raw = base_data_raw %>%
+  mutate(across(all_of(obs_col), as.numeric) )
+
+
+# Remove duplicate trials "GY" 2010|2011|2012 -----------------------------
+
+# these trials are repeated with new code according to lizbeth comments
+base_data_raw <- 
+  base_data_raw %>% 
+  filter(str_starts(use_trial_name, "GY2010|GY2011|GY2012")) 
+
+
+# standardize locations ---------------------------------------------------
+
+base_data_raw <- 
+  base_data_raw %>% 
+  mutate(use_location = 
+           recode_factor(use_location, 
+                         `Sabanalarga` = 'Sabanalarga. Atlantico, Colombia',
+                         `Pitalito` = 'Pitalito. Atlantico, Colombia',
+                         `Sampues` = 'Sampues. Sucre, Colombia',
+                         `Santo Tomas` = "Santo Tomas. Atlantico, Colombia",
+                         `La Libertad` = "La Libertad. Meta, Colombia",
+                         `Caracoli` = "Caracoli. Atlantico, Colombia",
+                         `Caribia` = "Caribia. Magdalena, Colombia",
+                         `Cerete` = "Cerete. Cordoba, Colombia",
+                         `CIAT` = "CIAT. Valle, Colombia",
+                         `Cienaga De Oro` = " Cienaga De Oro. Cordoba, Colombia",
+                         `Corozal` = "Corozal. Sucre, Colombia",
+                         `La Union` = "La Union. Sucre, Colombia",
+                         `Malambo` = "Malambo. Atlantico, Colombia",
+                         `Media Luna` = "Media Luna. Magdalena, Colombia",
+                         `Momil` = "Momil. Cordoba, Colombia",
+                         `Pivijay` = "Pivijay. Magdalena, Colombia",
+                         `Puerto Lopez` = "Puerto Lopez. Meta, Colombia",
+                         `Repelon` = "Repelon. Atlantico, Colombia",
+                         `Sahagun` = "Sahagun. Cordoba, Colombia",
+                         `Costa` = "Sampues. Sucre, Colombia")) 
+
+trial_standard <- 
+  base_data_raw
+
+# Get the tidy data   -----------------------------------------------------
+
+meta_info = names(trial_standard)[str_detect(names(trial_standard), "use_")]
+meta_info = gsub("use_", "", meta_info)
+meta_info
+trial_tidy = trial_standard
+names(trial_tidy) = gsub("use_", "", names(trial_standard))
+
+# observations
+trait_list = names(trial_tidy)[str_detect(names(trial_tidy), "obs_")]
+trait_list = gsub("obs_", "", trait_list)
+trait_list
+names(trial_tidy)= gsub("obs_", "", names(trial_tidy))
+trial_tidy = trial_tidy[c(meta_info, trait_list)]
+
+trial_tidy <- 
+  trial_tidy %>% add_column("data_set" = "cassava_base")
+# added a new column called data_set. It will be important to know 
+# the meaning of the scales in the past. 
+
+
+
+# Save the file in .csv -----------------------------------------------------
+
+trial_interest = "historical_data"
+
+meta_file_name = paste("01_", trial_interest, "_tidy_data_",
+                       Sys.Date(),".csv", sep = "")
+write.csv(trial_tidy, file = here::here("data", meta_file_name), row.names = F)
+
+# save the file in .RDS file ----------------------------------------------
+
+meta_file_name.r = paste("01_", trial_interest, "_tidy_data_",
+                       Sys.Date(),".rds", sep = "")
+saveRDS(trial_tidy, file = here::here("data", meta_file_name.r))
+
+
+# -------------------------------------------------------------------------
+# oracle data -------------------------------------------------------------
+# -------------------------------------------------------------------------
+OracleAYT <- 
+  read.csv("data/evaluaciones_avanzadas_all_years.csv", 
+           sep = ";", na.strings = c("#VALUE!",NA,".",""," ","-","\""), 
+           check.names = F)
+# 1538 trials
+
+# Remove trials duplicate with new ontology from CB --------------------------
+
+OracleAYT <- 
+  OracleAYT %>% 
+  filter(!str_starts(Ensayo, "GY2010|GY2011|GY2012|GY2013|GY2014"))
+
+
+# 137 trials replicated in cassava base
+
+# comparison between Oracle and Cassava Base with setdiff ----------------
+
+# Oracle data base
+trials_unique_OC <- 
+  OracleAYT %>% 
+  distinct(Ensayo) %>% 
+  pull() %>% 
+  as.character()
+
+# Cassava Base
+trials_unique_cb <-
+  trial_tidy %>% 
+  distinct(trial_name) %>% 
+  pull() %>% 
+  as.character()
+
+
+# Extract trials that do not exist in cassava base ------------------------
+
+trials <- 
+  setdiff(trials_unique_OC, trials_unique_cb)
+
+
+# Filter trials from oracle with no presence in cassava base --------------
+
+OracleAYT <- 
+  OracleAYT %>% 
+  filter(Ensayo %in% trials) 
+
+# Remove Edafoclimatica column
+
+OracleAYT <- OracleAYT %>% select(-Edafoclimatica)
+
+# fix forma de raiz values from 4 to 5
+OracleAYT <- OracleAYT %>% 
+  mutate(`Forma raiz` = replace(`Forma raiz`, `Forma raiz` == 4, 5))
+
+# necesito reemplazar todos los 4s en oracle por 5. Revisar tambien en Cassava base
+
+
+# standardize Oracle col names 
+
+colnames(OracleAYT) <-
+  c('trial_type', 'location', 'trial_name', 
+    'accession_name', 'rep_number', 'harvest_number', 'easy_harvest1-3',
+    'root_length1-3', 'root_peduncle1-3', 'root_skin_color1-3', 
+    'flesh_color_1-3' , 'root_shape1-6', 'root_constriction1-3',
+    'Follaje', 'root_type1-5', 'root_number_commercial', 'root_rot_number', 'HCN_picrate',
+    'selected', 'vigor1-5', 'flowering0-3', 'height', 'branch_number', 
+    'height_1st_branch', 'height_wt_leaf', 'stake_plant', 'lodging1-3',
+    'yield_1plant', 'harvest_index', 'yield_ha', 'yield_1year', 'DM_gravity',
+    'germinated_number_plot', 'indice_ramificacion')
+
+# standardize "tipo de ensayo" col ----------------------------------------
+
+OracleAYT <- OracleAYT %>%
+  mutate(trial_type = 
+           recode_factor(trial_type, 
+                         `CAMPO DE OBSERVACION` = "COB",
+                         `ENSAYO PRE. DE RENDIMIENTO` = "EPR", 
+                         `ENSAYO DE RENDIMIENTO` = "EAR", 
+                         `PRUEBA REGIONAL` = "PRC", 
+                         POLICRUZA = "PLY", F1C1 = "F1T"))
+
+
+# add column data set -----------------------------------------------------
+
+OracleAYT <- 
+  OracleAYT %>% 
+  add_column("data_set" = "Oracle_data_base")
+
+
+
+# Standardize location column ---------------------------------------------
+
+OracleAYT <- OracleAYT %>% mutate(location = recode_factor(location,
+                       `AGUAZUL        CASANARE--` = "Aguazul. Casanare, Colombia",
+                       `AREMASAIN      GUAJIRA--` = "Aremasain. Guajira, Colombia", 
+                       `BUENAVENTURA   VALLE--` = "Buenaventura",
+                       `CAJIBIO        CAUCA--` = "Cajibio. Cauca, Colombia",
+                       `CARACOLI       ATLANTICO--` = "Caracoli. Atlantico, Colombia", 
+                       `CARIBIA        MAGDALENA--` = "Caribia. Magdalena, Colombia", 
+                       `CARIMAGUA      META--` = "Carimagua. Meta, Colombia",
+                       `CIAT           VALLE--` = "CIAT. Valle, Colombia",
+                       `CRUZ DAS ALMAS BRASIL--` = "Cruz Das Almas (BA)-CNPMF-Area 2",
+                       `EL CARMEN      BOLIVAR--` = "El Carmen. Bolivar, Colombia",
+                       `EL ESPINAL     TOLIMA--` = "El Espinal. Tolima, Colombia", 
+                       `FLORENCIA      CAQUETA--` = "Florencia. Caqueta, Colombia", 
+                       `GINEBRA        VALLE--` = "Ginebra", 
+                       `GRANADA        META--` = "Granada. Meta, Colombia",
+                       `JAMUNDI        VALLE--` = "Jamundi. Valle, Colombia", 
+                       `LA DOLORES     VALLE--` = "La Dolores. Valle, Colombia",
+                       `LA LIBERTAD    META--` = "La Libertad. Meta, Colombia",
+                       `MALAMBO        ATLANTICO--` = "Malambo. Atlantico, Colombia", 
+                       `MATAZUL        META--` = "Matazul. Meta, Colombia",
+                       `MEDIA LUNA     MAGDALENA--` = "Media Luna. Magdalena, Colombia", 
+                       `MONDOMO        CAUCA--` = "Mondomo. Cauca, Colombia", 
+                       `MORALES        CAUCA--` = "Morales. Cauca, Colombia", 
+                       `PAJAUS         BRASIL--` = "Pajau. Brasil, Brazil", 
+                       `PATIA          CAUCA--` = "Patia. Cauca, Colombia",
+                       `POPAYAN        CAUCA--` = "Popayan. Cauca, Colombia", 
+                       `PUERTO LOPEZ   META--` = "Puerto Lopez",
+                       `QUILICHAO      CAUCA--` = "S. de Quilichao. Cauca, Colombia", 
+                       `REPELON        ATLANTICO--` = "Repelon. Atlantico, Colombia",
+                       `SAN PEDRO      VALLE--` = "San Pedro",
+                       `SANTO TOMAS    ATLANTICO--` = "Santo Tomas. Atlantico, Colombia",
+                       `TAMALAMEQUE    CESAR--` = "Tamalameque. Cesar, Colombia",
+                       `VALLEDUPAR     CESAR--` = "Valledupar. Cesar, Colombia")) 
+
+
+# Add year column to Oracle data base -------------------------------------
+
+OracleAYT <- 
+  OracleAYT %>% 
+  mutate(year = str_sub(trial_name, 3, 6),
+         year = as.numeric(year)) 
+
+# Bind the two data frames ------------------------------------------------
+
+histo_data <- bind_rows(trial_tidy %>% 
+                          mutate(year = as.numeric(year)), OracleAYT) %>% 
+  as_tibble() 
+  
+
+# Fix the matches between years and trial name ----------------------------
+
+histo_data <- histo_data %>% 
+  mutate(year = ifelse(trial_name == "GY200820", 2008, year), 
+         year = ifelse(trial_name == "GY200710", 2007, year)) 
+
+
+# Yield per years boxplot -------------------------------------------------
+
+plot <- histo_data %>% filter(!yield_ha > 150) %>% ggplot(aes(x = factor(year), y = yield_ha)) +
+  geom_violin(trim = FALSE, fill="gray")+
+  geom_boxplot(width = 0.2) +
+  labs(x = NULL) +
+  theme_xiaofei() 
+
+ggsave(paste0("images\\boxplot_", trial_interest, Sys.Date(), ".png"),
+       plot = plot, units = "in", dpi = 300, width = 12, height = 6
+)
+
+# There is a high value in year 2001, larger than 250ton/ha
+
+histo_data %>% filter(yield_ha > 150) %>% distinct(trial_name, plot_name, accession_name, yield_ha, data_set)
+
+# Fix the yield
+
+histo_data <- histo_data %>% 
+  mutate(yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_COL2089_25", 46.875, yield_ha),
+         yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_CM6370-2_18", 14.4, yield_ha),
+         yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_CM7436-7_1", 9.3, yield_ha),
+         yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_COL1736_26", 4.7, yield_ha),
+         yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_COL2246_9", 8.7, yield_ha),
+         yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_VEN208_5", 7.6, yield_ha),
+         yield_ha = ifelse(plot_name == "202022CQQU1_ciat_rep1_VEN77_13", 15.6, yield_ha))
+
+# It is necessary to download the updated cassava base data, many changes have 
+# been made since the last download in April 2021.
+         
+
+# Genebank accessions ----------------------------------------------------
+
+genebank = read_excel("data/CIAT_genebank_cassava.xlsx",
+                      sheet = "CASSAVA-GRP-CIAT (1)", skip = 6, na = "")
+
+# Select complete data localization  (latitud and longitud) & esculenta specie
+
+GIS <- genebank[!is.na(genebank$"Latitude (decimal)") &
+  !is.na(genebank$"Longitude (decimal)") &
+  genebank$Species == "esculenta", ]
+
+# select only the landraces
+
+landrace <- 
+  genebank$`Accession number`[!str_detect(genebank$`Accession number`, "-")]
+
+base_data_raw <- histo_data
+
+# number of unique clones in each studyName
+base_unique_clone <- base_data_raw %>%
+  group_by(trial_name) %>%
+  distinct(accession_name) %>% 
+  ungroup()
+base_unique_ct = as.data.frame(table(base_unique_clone$trial_name)) 
+colnames(base_unique_ct) = c("trial_name", "number_of_clone")
+
+
+# number of GB clone into Cassava base in each trial
+base_genebank_unique_clone = base_data_raw %>%
+  filter(accession_name %in% all_of(landrace)) %>%
+  group_by(trial_name, location) %>%
+  distinct(accession_name)
+
+# number of trials with genebank clones
+
+base_genebank_unique_clone %>% 
+  ungroup() %>% 
+  distinct(trial_name) %>% 
+  nrow()
+
+# historical years of trials with genebank clones
+
+base_data_raw %>% 
+  filter(trial_name %in% base_genebank_unique_clone$trial_name) %>% 
+  distinct(year) %>% 
+  arrange(year) %>% 
+  pull()
+
+# number of gbclones accessions
+
+base_genebank_unique_clone %>% 
+  ungroup() %>% 
+  distinct(accession_name) %>% 
+  nrow()
+
+base_genebank_unique_ct = data.frame(table(base_genebank_unique_clone$trial_name)) 
+colnames(base_genebank_unique_ct) = c("trial_name", "number_of_GBclone") # Study name and Number of GBclone
+
+# merge the count files
+unique_ct = base_genebank_unique_ct %>%
+  left_join(base_unique_ct, by=c("trial_name" = "trial_name")) %>% as_tibble()
+head(unique_ct)
+
+# total number of genebank accessions
+unique_ct[, -1] %>% colSums()
+
+
+
+# select the trials with genebank clones
+trial_unique_ct = unique_ct %>%
+  mutate(perc_GBclone = number_of_GBclone / number_of_clone *100) %>%
+  left_join(base_genebank_unique_clone[,c("trial_name", "location")], by=c("trial_name" = "trial_name")) %>%
+  filter(number_of_GBclone > 5, perc_GBclone > 20) %>%
+  distinct() %>% # made a distinc of locationName
+  arrange(location)
+
+trial_unique_ct %>% mutate(perc_no_GBclone = 100 - perc_GBclone) %>% 
+  pivot_longer(cols = c("perc_GBclone", "perc_no_GBclone"), values_to = "value") %>% 
+  ggplot() +
+  geom_histogram(aes(x = value, fill = name))
+
+data.frame(table(trial_unique_ct$location)) %>% filter(!Freq == 0) # 32 location with genebank clones
+
+write.csv(data.frame(table(trial_unique_ct$location)), "01_GBclone_location_ct_1.csv",
+          row.names=FALSE)
+
+# major locations, Palmira, Cauca, Meta, Pivijay (Magdalena)+ Atlandico, Bolivar+ cordoba +sucre 
+# add the Ag_zone based on the information from Nelson, the file is in 2021/cassavabase
+
+# Why the file 01_GBclone_location_ct created in previous line is different of the next one?
+
+trial_zone = read_excel("data/01_GBclone_location_ct_2021-05-31.xlsx")
+trial_zone %>% distinct(locationName) %>% print(n = Inf)
+
+
+trial_zone %>% distinct(Ag_zone)
+
+# major locations, Palmira, Cauca, Meta, Pivijay (Magdalena)+ Atlandico, Bolivar+ cordoba +sucre 
+# add the Ag_zone based on the information from Nelson, the file is in 2021/cassavabase
+
+
+trial_zone %>% distinct(Ag_zone)
+
+
+# 1 Acid soil,lowland tropical savannas
+# 2 High altitude tropics              
+# 3 Humid lowland tropics              
+# 4 Mid-altitude tropics               
+# 5 Semiarid lowland tropics           
+# 6 Subhumid lowland tropics  
+
+# add Ag_zone to the trials selected for GB trials
+trial_unique_ct_agzone = trial_unique_ct %>%
+  left_join(trial_zone[, c("locationName", "Ag_zone", "lat", "long" )], 
+            by = c("location" = "locationName"))
+
+trial_unique_ct_agzone %>% distinct(Ag_zone)
+
+trial_agzone <- trial_unique_ct_agzone %>% 
+  filter(Ag_zone %in% c("Subhumid lowland tropics", "Semiarid lowland tropics"))
+
+# map
+
+trial_agzone$long = as.numeric(trial_agzone$long)
+mapa <- borders("world", regions = c("Colombia"), 
+                fill = "gray", colour = "black")
+
+g1 <- trial_agzone %>% distinct(location, long, lat) %>% 
+  ggplot(aes(x = long, y = lat, fill = location)) + 
+  mapa +
+  geom_point(shape = 21, show.legend = T, size = 2) +
+  coord_fixed (ratio = 1.2) +
+  theme_xiaofei() +
+  labs(x = "Longitude", y = "Latitude", fill = "Locations") +
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_line(colour = "grey80"), 
+        panel.grid.minor = element_blank())
+
+g1
+ggsave(paste0("images/", trial_interest, "_genebank_", 
+              Sys.Date(),".png"), g1, units = "in", 
+       dpi = 300, width = 7, height = 7)
+
+
+# target population of environments (subhumid and semi-arid lowland tropics of Colombian Nort Cost)
+
+base_genebank_unique_clone %>% 
+  ungroup()  %>% 
+  filter(trial_name %in% trial_agzone$trial_name) %>% 
+  distinct(accession_name)
+
+
+######################################################################## understand the shared clones among trials in different Agzone####################### start
+###################### trials in  "Subhumid lowland tropics" 
+# Ask Sandra why these Ag_zone are selected?
+
+agzone = "Subhumid lowland tropics" # focus in this zone -> North cost (Camilo and Jorge Ivan)
+# agzone = "Acid soil,lowland tropical savannas" # Los llanos
+# agzone = "High altitude tropics" # Cauca
+# agzone = "Mid-altitude tropics" # Valle del Cauca & Santander de Quilichao
+
+
+
+
+trial_agzone_4zones =  trial_unique_ct_agzone %>%
+  filter(Ag_zone %in% c("Subhumid lowland tropics", 
+                        "Acid soil,lowland tropical savannas",
+                        "High altitude tropics",
+                        "Mid-altitude tropics"))
+
+# Data trials subhumid lowland tropics ------------------------------------
+
+# trials data of specific selected Ag zone == Subhumid lowlands tropics
+data_agzone = base_data_raw %>%
+  filter(use_trial_name %in% trial_agzone$use_trial_name) %>% 
+  as_tibble()
+
+
+data_agzone %>% 
+  distinct(use_location) %>% 
+  arrange(use_location)# 16 locations
+data_agzone %>% distinct(use_trial_name) # 55 studyNames
+dim(data_agzone)
+
+
