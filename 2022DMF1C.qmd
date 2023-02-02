@@ -8,6 +8,38 @@ date: "02/02/2023"
 
 This is a script about predictions in non-replicated trials with augmented checks. According to Salvador Gezan, the best way to make good predictions is to do a spatial analysis. See [Part 1](https://vsni.co.uk/blogs/unreplicated-trials-part-1) and [Part 2](https://vsni.co.uk/blogs/unreplicated-trials-part-2).
 
+## Load packages 
+
+Here we check whether all necessary packages are installed in your computer.
+
 ```{r}
-1 + 1
+## Packages (install)
+pkgs <- rownames(installed.packages())
+if(!"tidyverse" %in% pkgs) install.packages("tidyverse")
+if(!"here" %in% pkgs) install.packages("here")
+if(!"statgenSTA" %in% pkgs) install.packages("statgenSTA")
+if(!"statgenGxE" %in% pkgs) install.packages("statgenGxE")
+if(!"openxlsx" %in% pkgs) install.packages("openxlsx")
+if(!"asreml" %in% pkgs) install.packages("asreml")
 ```
+
+The code recognizes if certain packages are missing from your package library and, if so, will install them automatically.
+
+Now, we need to load the packages:
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+library(statgenSTA)
+library(statgenGxE)
+library(openxlsx)
+library(asreml)
+```
+
+## Load the functions of utilities_tidy on GitHub
+
+```{r}
+source("https://raw.githubusercontent.com/Cassava2050/PPD/main/utilities_tidy.R")
+source("https://raw.githubusercontent.com/darizasu/work/master/scripts/ggCor.R")
+```
+
