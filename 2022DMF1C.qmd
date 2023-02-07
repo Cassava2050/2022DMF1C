@@ -446,23 +446,7 @@ for (var in trait_ideal) {
 }
 ```
 
-## BLUEs or raw data across the trials
 
-```{r eval=FALSE}
-for (var in trait_ideal_pivot) {
-  # var = "DM_raw"
-  blue_blup <- my_dat %>% 
-    select(trial_name, accession_name, .data[[var]]) %>%
-    distinct() %>%
-    group_by(trial_name, accession_name) %>% 
-    pivot_wider(names_from = trial_name, values_from = .data[[var]]) %>%
-    right_join(blup_table %>%
-    select(accession_name, matches(var)), by = "accession_name")
-  # remove all NA columns
-  blue_blup <- blue_blup[, colSums(is.na(blue_blup)) < nrow(blue_blup)]
-  master_data[[paste("BLUP_BLUE_", var, trial_interest, sep = "_")]] <- blue_blup
-}
-```
 
 
 
