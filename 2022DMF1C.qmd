@@ -8,11 +8,12 @@ date: "02/02/2023"
 
 This is a script about predictions in non-replicated trials with augmented checks. According to Salvador Gezan, the best way to make good predictions is to do a spatial analysis. See [Part 1](https://vsni.co.uk/blogs/unreplicated-trials-part-1) and [Part 2](https://vsni.co.uk/blogs/unreplicated-trials-part-2).
 
-## Load packages 
+## Load packages
 
 Here we check whether all necessary packages are installed in your computer.
 
 ```{r}
+rm(list=ls())
 ## Packages (install)
 pkgs <- rownames(installed.packages())
 if(!"tidyverse" %in% pkgs) install.packages("tidyverse")
@@ -21,6 +22,7 @@ if(!"statgenSTA" %in% pkgs) install.packages("statgenSTA")
 if(!"statgenGxE" %in% pkgs) install.packages("statgenGxE")
 if(!"openxlsx" %in% pkgs) install.packages("openxlsx")
 if(!"asreml" %in% pkgs) install.packages("asreml")
+if(!"SpATS" %in% pkgs) install.packages("SpATS")
 ```
 
 The code recognizes if certain packages are missing from your package library and, if so, will install them automatically.
@@ -34,6 +36,7 @@ library(statgenSTA)
 library(statgenGxE)
 library(openxlsx)
 library(asreml)
+library(SpATS)
 ```
 
 ## Load the functions of utilities_tidy on GitHub
@@ -41,5 +44,430 @@ library(asreml)
 ```{r}
 source("https://raw.githubusercontent.com/Cassava2050/PPD/main/utilities_tidy.R")
 source("https://raw.githubusercontent.com/darizasu/work/master/scripts/ggCor.R")
+
+# remember call the functions updated according to these colnames.
 ```
+
+## Load the files to check
+
+```{r}
+local_file <- "yes" 
+
+if (local_file == "yes") {
+  folder <- "D:\\OneDrive - CGIAR\\Data Analysis\\2022DMF1C\\data\\"
+  file <- "phenotype.csv"
+  skip_col <- 0 # double check the number of col skipped
+  trial_interest = "DMF1C"
+  year_interest <- 2021
+}
+# 1) load the data
+sel_data <- read_cassavabase(phenotypeFile = paste0(folder, file))
+```
+
+## Create the master_data file
+
+```{r}
+master_data <- list()
+```
+
+
+The data are already tidy, there are two trials, each with an augmented design with diagonal checks. It is necessary add the trial_name col.
+
+## Add the trial name col
+
+The locations are: Dong Nai and Tay Ninh. Both in Vietnam
+
+```{r}
+sel_data <- sel_data %>% 
+  mutate(trial_name = str_sub(plot_name, 1, 14)) %>% 
+  relocate(trial_name, .before = plot_name)
+```
+
+## Double check design
+
+I will check the experimental design of each trial.
+
+### Duplications in row and cols
+
+I had to modified the preloaded functions, because the data are already tidy and did no have the words "use_" and "obs_"
+
+```{r}
+source("modified_functions.R") # I wrote a new utilities file because variables did not come from cassava base
+duplicated_plot <- row_col_dup(sel_data)
+```
+
+### Visualize layout
+
+It is necessary fix the zeros in column "is_a_control"
+
+```{r}
+sel_data$is_a_control[sel_data$is_a_control == 0] <- NA
+```
+
+Replace factors in "is_a_control" var into check and test, then rename the column as "check test.
+
+```{r}
+sel_data <- sel_data %>% 
+   mutate(is_a_control = replace(is_a_control, is_a_control == 1, "check")) %>% 
+   mutate(is_a_control = replace_na(is_a_control, "test")) %>% 
+   rename("check_test" = is_a_control)
+
+
+```
+
+Plotting the layout
+
+```{r}
+trial_layout(sel_data)
+```
+
+# add family factor
+
+```{r}
+sel_data <- sel_data %>%  
+  separate(accession_name, into = c("family_name", "offspring"), 
+           sep = "-", remove = F)
+
+checks <- sel_data %>% 
+  filter(check_test == "check") %>% 
+  distinct(accession_name) %>% 
+  pull()
+
+sel_data <- 
+  sel_data %>%
+  mutate(family_name = ifelse(accession_name %in% checks, NA, family_name)) %>% 
+  dplyr::select(-offspring) 
+```
+
+Delete the NA values of family names from checks and replace with word "check"
+
+```{r}
+sel_data <- sel_data %>% mutate(
+  family_name = ifelse(is.na(family_name), "check", family_name),
+  family_name = as.factor(family_name)
+)
+```
+
+# Layout family names
+
+```{r}
+trial_layout_family(sel_data)
+```
+
+Fix the data in column 1 and 2 2022DMF1C_dona trial, according to Xiaofei's comments; I;m going to remove col 1 and 2 from 2022DMF1C_dona trial
+
+```{r}
+dona <- sel_data %>% filter(trial_name == "2022DMF1C_dona", !col_number %in% c(1,2))
+
+sel_data <- sel_data %>% filter(!trial_name == "2022DMF1C_dona") %>% 
+  bind_rows(dona)
+
+trial_layout_family(sel_data)
+
+master_data[["tidy_data"]] <- sel_data
+```
+
+## Boxplot 
+
+```{r}
+
+# ideal traits out.width = '60%', fig.height=8, fig.width=8
+trait_ideal <- colnames(sel_data[c(13:18, 22:26, 31, 33)])
+
+
+plot_bxp <- sel_data %>%
+  pivot_longer(
+    cols = all_of(trait_ideal),
+    names_to = "var",
+    values_to = "values"
+  ) %>%
+  ggplot(aes(x = trial_name, y = values)) +
+  geom_violin(trim = FALSE, fill = "gray") +
+  geom_boxplot(width = 0.2, trim = FALSE) +
+  labs(x = NULL, y = NULL, title = "Dong Nai location") +
+  theme_xiaofei() +
+  theme(
+    axis.text.x = element_text(size = 8, vjust = 1),
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(color = "black"),
+    
+  ) +
+  facet_wrap(~var,
+    ncol = 3, scales = "free_y"#,
+    #labeller = as_labeller(fct_labels)
+  ) +
+  theme(
+    strip.text.x = element_text(
+      size = 12, face = "bold.italic"
+    )
+  )
+# labs(caption = "Trial name: Year + trial number + pipeline + trial type + location + months after planting")
+plot_bxp
+```
+
+## Summary tables
+
+```{r warning=FALSE, message=FALSE}
+i <- 1
+for (var in trait_ideal) {
+  # summary tables
+  summ <- sel_data %>%
+    distinct(trial_name, plot_name, rep_number, accession_name, .data[[var]]) %>%
+    group_by(trial_name) %>%
+    summarise(
+      n_gen = n_distinct(accession_name),
+      n_reps = n_distinct(rep_number),
+      n_total = n(),
+      n_missing = sum(is.na(.data[[var]])),
+      n_percent = n_missing / n_total,
+      zeros = sum(.data[[var]] == 0, na.rm = TRUE),
+      rcbd = ifelse(n_reps > 1, TRUE, FALSE),
+      design = ifelse(n_reps == 1, "unrep", design)
+    ) %>%
+    type.convert() %>%
+    arrange(n_gen)
+  summ <- summ %>%
+    as.data.frame() %>%
+    mutate(trait = var)
+  if (i == 1) {
+    resum_tables <- summ
+  } else {
+    resum_tables <- rbind.data.frame(resum_tables, summ)
+  }
+  i <- i + 1
+  
+  master_data[[paste0("summary_", trial_interest)]] <- resum_tables
+}
+```
+
+# Spatial Model
+
+```{r}
+# factor
+sel_data$family_name = as.factor(sel_data$family_name)
+sel_data$accession_name = as.factor(sel_data$accession_name)
+
+# create a factor of row and cols
+sel_data$R <- as.factor(sel_data$row_number)
+sel_data$C <- as.factor(sel_data$col_number)
+
+```
+
+## Set location experiment
+
+```{r}
+location <- "dona" # -------select one
+# location <- "tani"
+# ---------------------------------------------------
+
+data_location <- sel_data %>% filter(str_detect(trial_name, location))
+
+# n segments
+ncols = length(unique(data_location$C))
+nrows = length(unique(data_location$R))
+```
+
+
+```{r warning=FALSE}
+gen = "accession_name"
+h2 <- c()
+i <- 1
+for (trait in trait_ideal) {
+  mo_spatial <- SpATS(
+    response = trait,
+    genotype = "accession_name",
+    genotype.as.random = T,
+    fixed = NULL,
+    spatial = ~ PSANOVA(col_number,
+      row_number,
+      nseg = c(ncols, nrows),
+      degree = c(3, 3),
+      nest.div = 2
+    ),
+    random = ~ R + C,
+    data = data_location,
+    control = list(tolerance = 1e-03, monitoring = 1)
+  )
+
+
+  plot(mo_spatial)
+  var.m0 <- variogram(mo_spatial)
+  plot(var.m0)
+
+  ng <- length(mo_spatial$terms$geno$geno_names)
+
+  g.SpATS <-
+    mo_spatial$coeff[1:ng] %>%
+    data.frame(coeff = .) %>%
+    rownames_to_column(gen) %>%
+    mutate(
+      variable = trait,
+      BLUP = mo_spatial$fitted[1:ng]
+    ) %>%
+    filter(accession_name %in% sel_data_dona$accession_name) %>%
+    select(-coeff)
+  
+    h2[i] <- getHeritability(mo_spatial)
+  names(h2)[i] <- trait
+
+
+  if (i == 1) {
+    pvals_table <- g.SpATS
+  } else {
+    pvals_table <- rbind.data.frame(pvals_table, g.SpATS)
+  }
+
+  i <- i + 1
+}
+```
+
+## Save the BLUPs
+
+```{r}
+pvals_table <- pvals_table %>%
+  group_by(variable, accession_name) %>%
+  spread(variable, value = BLUP) %>%
+  ungroup() 
+#save the BLUPs data
+master_data[[paste0("BLUPs_", location)]] <- pvals_table
+```
+
+## Save the heritabilities for both locations
+
+```{r}
+h2 <- h2 %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("trait")
+colnames(h2) <- c("var", "h2")
+
+# save the heritability
+master_data[[paste0("h2_", location)]] <- h2
+```
+
+## Overall model with two locations together
+
+# MET
+## Heritability
+
+```{r}
+dropsTD <- statgenSTA::createTD(data = sel_data, genotype = "accession_name", trial = "trial_name")
+  
+  
+  herit_multi = data.frame(matrix(nrow=1, ncol = length(trait_ideal)))
+  names(herit_multi) = trait_ideal
+  for(i in 1:length(trait_ideal)){
+    gxe_trait= trait_ideal[i]
+    dropsVarComp <- gxeVarComp(TD = dropsTD, trait = gxe_trait, engine = "asreml")
+    #summary(dropsVarComp)
+    
+    #diagnostics(dropsVarComp)
+    #vc(dropsVarComp)
+    herit_multi[,i] = herit(dropsVarComp)
+  }
+  
+  
+  master_data[["heritability_multi"]] = herit_multi   ## ------------ save BLUE
+```
+
+
+# BLUP value
+
+```{r eval=FALSE}
+
+
+
+genotype_gxe = as.character(unique(sel_data$accession_name))
+
+BLUP_gxe =  data.frame(matrix(nrow = length(genotype_gxe)))
+names(BLUP_gxe) = "accession_name"
+BLUP_gxe$accession_name = genotype_gxe
+
+for(i in 1:length(trait_ideal)){
+  gxe_trait = trait_ideal[i]
+  dropsVC2 <- gxeVarCov(TD = dropsTD, trait = gxe_trait, 
+                        engine = "asreml", criterion = "AIC")
+  
+  model_blup <- dropsVC2$STA[[names(dropsVC2$STA)]]$mFix[[gxe_trait]]
+  BLUP_gxe_i = data.frame(predict(model_blup, 
+                                  classify = "genotype")$pvals )[,1:3]   ## --------- BLUP!
+  
+  names(BLUP_gxe_i) = c("genotype",
+                        gsub("BLUEs_", "BLUPs_", gxe_trait),
+                        gsub("BLUEs_", "seBLUPs_", gxe_trait) )
+  
+  BLUP_gxe = BLUP_gxe %>%
+    left_join(BLUP_gxe_i, by="genotype")
+}
+
+
+
+master_data[["BLUP"]] = BLUP_gxe
+```
+
+
+```{r eval=FALSE}
+sel_data$trial_name <- as.factor(sel_data$trial_name)
+h2_fa2 <- c()
+i <- 1
+trait_ideal <- c("Height_To_1st_Branch")
+
+# c("Height_Of_Main_Stem", 
+#                  "Height_To_1st_Branch", "Plant_Type", "Root_Type", 
+#                  "Root_Weight", "Starch_Content")
+
+for (var in trait_ideal) {
+  eqt_fixed <- reformulate(c("trial_name"), response = var)
+  model_MET_2stage <- asreml(
+    fixed = eqt_fixed,
+    random = ~ accession_name + trial_name:accession_name,
+    data = sel_data,
+    family = asr_gaussian(dispersion = 1),
+    na.action = list(x = "exclude", y = "exclude"),
+    trace = 0
+  )
+  model_MET_2stage <- update.asreml(model_MET_2stage)
+  model_MET_2stage <- update.asreml(model_MET_2stage)
+  pred_f <- predict(model_MET_2stage, classify = "accession_name")
+  PP <- pred_f$pvals %>% mutate(variable = var)
+  h2_fa2[i] <- agriutilities::heritability_fa(
+    model_fa = model_MET_2stage,
+    genotype = "accession_name",
+    env = "trial_name",
+    vc.model = "fa2"
+  )$H2Cullis
+  
+  names(h2_fa2)[i] <- var
+  if (i == 1) {
+    pvals_table <- PP
+  } else {
+    pvals_table <- rbind.data.frame(pvals_table, PP)
+  }
+  i <- i + 1
+}
+```
+
+## BLUEs or raw data across the trials
+
+```{r eval=FALSE}
+for (var in trait_ideal_pivot) {
+  # var = "DM_raw"
+  blue_blup <- my_dat %>% 
+    select(trial_name, accession_name, .data[[var]]) %>%
+    distinct() %>%
+    group_by(trial_name, accession_name) %>% 
+    pivot_wider(names_from = trial_name, values_from = .data[[var]]) %>%
+    right_join(blup_table %>%
+    select(accession_name, matches(var)), by = "accession_name")
+  # remove all NA columns
+  blue_blup <- blue_blup[, colSums(is.na(blue_blup)) < nrow(blue_blup)]
+  master_data[[paste("BLUP_BLUE_", var, trial_interest, sep = "_")]] <- blue_blup
+}
+```
+
+
+
+
+
+
+
 
